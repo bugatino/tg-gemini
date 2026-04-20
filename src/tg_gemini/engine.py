@@ -932,6 +932,7 @@ class Engine:
             ("agent", "Switch agent (gemini/claude)"),
             ("lang", "Switch language"),
             ("quiet", "Toggle quiet mode"),
+            ("toolout", "Toggle tool output display"),
             ("stop", "Stop agent"),
             ("help", "Show help"),
             ("commands", "Reload commands: /commands reload"),
