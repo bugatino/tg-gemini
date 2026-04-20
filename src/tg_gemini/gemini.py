@@ -24,7 +24,7 @@ from tg_gemini.models import (
     ModelOption,
 )
 
-__all__ = ["GeminiAgent", "GeminiSession", "SessionInfo"]
+__all__ = ["GeminiAgent", "GeminiSession", "SessionInfo", "_FALLBACK_MODELS", "_is_quota_error"]
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,23 @@ _KNOWN_MODELS: list[ModelOption] = [
     ModelOption(name="gemini-2.5-flash", desc="Gemini 2.5 Flash"),
     ModelOption(name="gemini-2.5-flash-lite", desc="Gemini 2.5 Flash Lite"),
 ]
+
+# Ordered fallback chain: when a model hits quota, try the next one
+_FALLBACK_MODELS: list[str] = [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+]
+
+
+def _is_quota_error(s: str) -> bool:
+    """Return True if the string indicates a rate-limit / capacity error."""
+    r = s.lower()
+    return any(k in r for k in (
+        "429", "ratelimitexceeded", "resource_exhausted",
+        "model_capacity_exhausted", "no capacity",
+        "quá tải",   # catch our own _classify_error messages too
+    ))
 
 
 def _normalize_mode(raw: str) -> GeminiMode:

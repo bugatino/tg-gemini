@@ -13,7 +13,7 @@ from tg_gemini.claude import ClaudeAgent, ClaudeSession
 from tg_gemini.commands import CommandLoader
 from tg_gemini.config import AgentType, AppConfig
 from tg_gemini.dedup import MessageDedup
-from tg_gemini.gemini import GeminiAgent, GeminiSession
+from tg_gemini.gemini import GeminiAgent, GeminiSession, _FALLBACK_MODELS, _is_quota_error
 from tg_gemini.i18n import I18n, Language, MsgKey
 from tg_gemini.models import EventType, Message, ReplyContext
 from tg_gemini.ratelimit import RateLimiter
@@ -255,13 +255,39 @@ class Engine:
                     pass
 
     async def _run_gemini(self, msg: Message, session: Session) -> None:
-        """Backward-compatible alias for _run_agent (gemini only)."""
+        """Run Gemini agent with automatic model-fallback on quota errors."""
         if session.agent_type != "gemini":
             session.agent_type = "gemini"
             self._sessions._save()
-        await self._run_agent(msg, session)
 
-    async def _run_agent(self, msg: Message, session: Session) -> None:
+        assert msg.reply_ctx is not None
+        ctx: ReplyContext = msg.reply_ctx
+
+        for _attempt in range(len(_FALLBACK_MODELS) + 1):
+            is_quota = await self._run_agent(msg, session)
+            if not is_quota:
+                break
+            # Quota hit — try next fallback model
+            current = self._gemini.model or _FALLBACK_MODELS[0]
+            try:
+                idx = _FALLBACK_MODELS.index(current)
+            except ValueError:
+                idx = 0
+            if idx + 1 >= len(_FALLBACK_MODELS):
+                await self._platform.send(
+                    ctx,
+                    "⚠️ Tất cả model đều đang quá tải. Vui lòng thử lại sau vài phút."
+                )
+                break
+            next_model = _FALLBACK_MODELS[idx + 1]
+            self._gemini.model = next_model
+            logger.info("Engine: quota fallback", from_model=current, to_model=next_model)
+            await self._platform.send(
+                ctx,
+                f"⚡ Model `{current}` quá tải, tự động chuyển sang `{next_model}`..."
+            )
+
+    async def _run_agent(self, msg: Message, session: Session) -> bool:  # returns True if quota error
         """Send prompt to Gemini or Claude and stream events to Telegram."""
         assert msg.reply_ctx is not None
         ctx: ReplyContext = msg.reply_ctx
@@ -380,13 +406,16 @@ class Engine:
 
                     case EventType.ERROR:
                         err_str = str(event.error) if event.error else "❌ Lỗi không xác định."
+                        if _is_quota_error(err_str):
+                            return True  # signal caller to retry with fallback model
                         await self._platform.send(ctx, err_str)
 
                     case EventType.RESULT:
                         sent = await preview.finish(full_text)
                         if event.error:
-                            # result event with status=error (e.g. 429, model failure)
                             err_str = str(event.error)
+                            if _is_quota_error(err_str):
+                                return True  # quota error in result → retry
                             await self._platform.send(ctx, err_str)
                         elif not sent:
                             if full_text:
@@ -411,6 +440,7 @@ class Engine:
             self._active_claude.pop(msg.session_key, None)
             if agent_session:
                 await agent_session.close()
+        return False  # no quota error
 
     async def _reply(self, msg: Message, content: str) -> None:
         if msg.reply_ctx is not None:
