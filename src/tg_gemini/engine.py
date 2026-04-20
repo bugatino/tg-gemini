@@ -379,7 +379,7 @@ class Engine:
                     case EventType.TOOL_RESULT:
                         show = bool(istate and istate.show_tool_output)
                         quiet = bool(istate and istate.quiet)
-                        logger.debug(
+                        logger.info(
                             "Engine: TOOL_RESULT",
                             show_tool_output=show,
                             quiet=quiet,
