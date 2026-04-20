@@ -172,3 +172,17 @@ class StreamPreview:
     def detach(self) -> None:
         """Clear the preview handle (keep message visible but stop tracking)."""
         self._preview_handle = None
+
+    async def delete(self) -> None:
+        """Delete the preview message and stop tracking (called before tool notifications).
+
+        Unlike freeze(), this removes the pre-tool text from chat entirely,
+        preventing a duplicate greeting when the final response is sent.
+        """
+        async with self._lock:
+            self._cancel_flush()
+            if self._preview_handle is not None:
+                with contextlib.suppress(Exception):
+                    await self._delete_preview(self._preview_handle)
+            self._degraded = True
+            self._preview_handle = None

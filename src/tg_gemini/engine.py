@@ -362,8 +362,8 @@ class Engine:
                             await self._platform.send(ctx, thinking_msg)
 
                     case EventType.TOOL_USE:
-                        await preview.freeze()
-                        preview.detach()
+                        # Delete the pre-tool preview text to avoid duplicate greeting
+                        await preview.delete()
                         tool_used = True
                         if not session.quiet:
                             tool_display = event.tool_input
@@ -646,12 +646,10 @@ class Engine:
             buttons = [
                 CardButton(m.desc or m.name, f"act:cmd:/model {m.name}") for m in models
             ]
-        return (
-            CardBuilder()
-            .title(self._i18n.tf(MsgKey.MODEL_CURRENT, current))
-            .actions(*buttons)
-            .build()
-        )
+        builder = CardBuilder().title(self._i18n.tf(MsgKey.MODEL_CURRENT, current))
+        for btn in buttons:
+            builder = builder.actions(btn)  # one button per row → vertical layout
+        return builder.build()
 
     def _build_list_card(self, session_key: str, args: str) -> Card:
         page = 1
@@ -820,9 +818,12 @@ class Engine:
         # Keep istate in sync so same-session TOOL_USE quiet check still works
         istate = self._interactive.setdefault(msg.session_key, _InteractiveState())
         istate.show_tool_output = session.show_tool_output
-        status = "ON 📤" if session.show_tool_output else "OFF"
+        if session.show_tool_output:
+            feedback = "✅ Tool Output: BẬT\nKết quả chi tiết của mỗi tool sẽ được hiển thị."
+        else:
+            feedback = "🔇 Tool Output: TẮT\nKết quả tool sẽ bị ẩn (chỉ hiện tên tool)."
         logger.info(f"Engine: /toolout sid={session.id[:8]} show_tool_output={session.show_tool_output}")
-        await self._reply(msg, f"Tool output display: {status}")
+        await self._reply(msg, feedback)
 
     async def _cmd_status(self, msg: Message) -> None:
         if msg.reply_ctx is None:
