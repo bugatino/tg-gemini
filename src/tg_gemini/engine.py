@@ -379,12 +379,7 @@ class Engine:
                     case EventType.TOOL_RESULT:
                         show = session.show_tool_output
                         quiet = session.quiet
-                        logger.info(
-                            "Engine: TOOL_RESULT",
-                            show_tool_output=show,
-                            quiet=quiet,
-                            has_content=bool(event.content),
-                        )
+                        logger.info(f"Engine: TOOL_RESULT show={show} quiet={quiet} has_content={bool(event.content)}")
                         if show and not quiet:
                             if event.content:
                                 max_len = self._config.display.tool_max_len
@@ -819,13 +814,14 @@ class Engine:
         await self._reply(msg, self._i18n.t(key))
 
     async def _cmd_toolout(self, msg: Message) -> None:
+        session = self._sessions.get_or_create(msg.session_key)
+        session.show_tool_output = not session.show_tool_output
+        self._sessions._save()
+        # Keep istate in sync so same-session TOOL_USE quiet check still works
         istate = self._interactive.setdefault(msg.session_key, _InteractiveState())
-        istate.show_tool_output = not istate.show_tool_output
-        session = self._sessions.get(msg.session_key)
-        if session:
-            session.show_tool_output = istate.show_tool_output
-            self._sessions._save()
-        status = "ON 📤" if istate.show_tool_output else "OFF"
+        istate.show_tool_output = session.show_tool_output
+        status = "ON 📤" if session.show_tool_output else "OFF"
+        logger.info(f"Engine: /toolout sid={session.id[:8]} show_tool_output={session.show_tool_output}")
         await self._reply(msg, f"Tool output display: {status}")
 
     async def _cmd_status(self, msg: Message) -> None:
