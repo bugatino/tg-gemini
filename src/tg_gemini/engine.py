@@ -377,11 +377,23 @@ class Engine:
                             await self._platform.send(ctx, tool_msg)
 
                     case EventType.TOOL_RESULT:
-                        if (istate and istate.show_tool_output) and not (istate and istate.quiet):
+                        show = bool(istate and istate.show_tool_output)
+                        quiet = bool(istate and istate.quiet)
+                        logger.debug(
+                            "Engine: TOOL_RESULT",
+                            show_tool_output=show,
+                            quiet=quiet,
+                            has_content=bool(event.content),
+                        )
+                        if show and not quiet:
                             if event.content:
                                 max_len = self._config.display.tool_max_len
-                                output = event.content[:max_len] + "…" if len(event.content) > max_len else event.content
-                                await self._platform.send(ctx, f"📤 ```\n{output}\n```")
+                                output = (
+                                    event.content[:max_len] + "…"
+                                    if len(event.content) > max_len
+                                    else event.content
+                                )
+                                await self._platform.send(ctx, f"📤 Tool output:\n{output}")
 
                     case EventType.PERMISSION_REQUEST:
                         # Claude only: ask user for permission to run tool
