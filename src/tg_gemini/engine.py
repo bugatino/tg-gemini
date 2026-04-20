@@ -365,7 +365,7 @@ class Engine:
                         await preview.freeze()
                         preview.detach()
                         tool_used = True
-                        if not (istate and istate.quiet):
+                        if not session.quiet:
                             tool_display = event.tool_input
                             max_len = self._config.display.tool_max_len
                             if len(tool_display) > max_len:
@@ -377,8 +377,8 @@ class Engine:
                             await self._platform.send(ctx, tool_msg)
 
                     case EventType.TOOL_RESULT:
-                        show = bool(istate and istate.show_tool_output)
-                        quiet = bool(istate and istate.quiet)
+                        show = session.show_tool_output
+                        quiet = session.quiet
                         logger.info(
                             "Engine: TOOL_RESULT",
                             show_tool_output=show,
@@ -811,12 +811,20 @@ class Engine:
     async def _cmd_quiet(self, msg: Message) -> None:
         istate = self._interactive.setdefault(msg.session_key, _InteractiveState())
         istate.quiet = not istate.quiet
+        session = self._sessions.get(msg.session_key)
+        if session:
+            session.quiet = istate.quiet
+            self._sessions._save()
         key = MsgKey.QUIET_ON if istate.quiet else MsgKey.QUIET_OFF
         await self._reply(msg, self._i18n.t(key))
 
     async def _cmd_toolout(self, msg: Message) -> None:
         istate = self._interactive.setdefault(msg.session_key, _InteractiveState())
         istate.show_tool_output = not istate.show_tool_output
+        session = self._sessions.get(msg.session_key)
+        if session:
+            session.show_tool_output = istate.show_tool_output
+            self._sessions._save()
         status = "ON 📤" if istate.show_tool_output else "OFF"
         await self._reply(msg, f"Tool output display: {status}")
 

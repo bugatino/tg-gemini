@@ -36,6 +36,9 @@ class Session:
     history: list[HistoryEntry] = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # UI preferences (persisted so they survive service restarts)
+    quiet: bool = False
+    show_tool_output: bool = False
     _busy: bool = field(default=False, repr=False)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
@@ -224,6 +227,8 @@ class SessionManager:
                 "agent_session_id": s.agent_session_id,
                 "agent_type": s.agent_type,
                 "name": s.name,
+                "quiet": s.quiet,
+                "show_tool_output": s.show_tool_output,
                 "history": [
                     {
                         "role": h.role,
@@ -279,6 +284,8 @@ class SessionManager:
                 history=history,
                 created_at=datetime.fromisoformat(sd["created_at"]),
                 updated_at=datetime.fromisoformat(sd["updated_at"]),
+                quiet=sd.get("quiet", False),
+                show_tool_output=sd.get("show_tool_output", False),
             )
             self._sessions[sid] = session
             if session.user_key:
