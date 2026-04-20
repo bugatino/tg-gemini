@@ -43,6 +43,7 @@ def _to_tg_command(name: str) -> str:
 @dataclass
 class _InteractiveState:
     quiet: bool = False
+    show_tool_output: bool = False
     delete_selected: set[str] = field(default_factory=set)
     delete_phase: str = ""  # "" | "select" | "confirm"
 
@@ -182,6 +183,8 @@ class Engine:
                 await self._cmd_lang(msg, args)
             case "/quiet":
                 await self._cmd_quiet(msg)
+            case "/toolout":
+                await self._cmd_toolout(msg)
             case "/status":
                 await self._cmd_status(msg)
             case "/list":
@@ -346,6 +349,13 @@ class Engine:
                             else:
                                 tool_msg = f"🔧 **{event.tool_name}**"
                             await self._platform.send(ctx, tool_msg)
+
+                    case EventType.TOOL_RESULT:
+                        if (istate and istate.show_tool_output) and not (istate and istate.quiet):
+                            if event.content:
+                                max_len = self._config.display.tool_max_len
+                                output = event.content[:max_len] + "…" if len(event.content) > max_len else event.content
+                                await self._platform.send(ctx, f"📤 ```\n{output}\n```")
 
                     case EventType.PERMISSION_REQUEST:
                         # Claude only: ask user for permission to run tool
@@ -759,6 +769,12 @@ class Engine:
         istate.quiet = not istate.quiet
         key = MsgKey.QUIET_ON if istate.quiet else MsgKey.QUIET_OFF
         await self._reply(msg, self._i18n.t(key))
+
+    async def _cmd_toolout(self, msg: Message) -> None:
+        istate = self._interactive.setdefault(msg.session_key, _InteractiveState())
+        istate.show_tool_output = not istate.show_tool_output
+        status = "ON 📤" if istate.show_tool_output else "OFF"
+        await self._reply(msg, f"Tool output display: {status}")
 
     async def _cmd_status(self, msg: Message) -> None:
         if msg.reply_ctx is None:
