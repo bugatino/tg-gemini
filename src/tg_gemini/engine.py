@@ -379,14 +379,16 @@ class Engine:
                         await self._platform.send_with_buttons(ctx, perm_msg, buttons)
 
                     case EventType.ERROR:
-                        err_str = str(event.error) if event.error else "unknown error"
-                        await self._platform.send(
-                            ctx, self._i18n.tf(MsgKey.ERROR_PREFIX, err_str)
-                        )
+                        err_str = str(event.error) if event.error else "❌ Lỗi không xác định."
+                        await self._platform.send(ctx, err_str)
 
                     case EventType.RESULT:
                         sent = await preview.finish(full_text)
-                        if not sent:
+                        if event.error:
+                            # result event with status=error (e.g. 429, model failure)
+                            err_str = str(event.error)
+                            await self._platform.send(ctx, err_str)
+                        elif not sent:
                             if full_text:
                                 await self._platform.reply(ctx, full_text)
                             elif not tool_used:

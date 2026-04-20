@@ -58,6 +58,53 @@ def _normalize_mode(raw: str) -> GeminiMode:
             return "default"
 
 
+def _classify_error(raw: str) -> str:
+    """Turn raw error text into a user-friendly message with recommendations."""
+    r = raw.lower()
+    if any(k in r for k in ("429", "ratelimitexceeded", "resource_exhausted",
+                             "model_capacity_exhausted", "no capacity")):
+        model = ""
+        m = re.search(r'"model"\s*:\s*"([^"]+)"', raw)
+        if m:
+            model = m.group(1)
+        model_hint = f" (model: `{model}`)" if model else ""
+        return (
+            f"⚠️ Model quá tải / hết quota{model_hint}.\n"
+            "💡 Gợi ý:\n"
+            "• Dùng `/model gemini-2.5-flash` — nhẹ hơn, ít bị giới hạn\n"
+            "• Dùng `/model gemini-2.5-flash-lite` — nhanh nhất, ít quota nhất\n"
+            "• Chờ vài giây rồi thử lại"
+        )
+    if any(k in r for k in ("401", "unauthenticated", "invalid credential",
+                             "oauth", "not authenticated")):
+        return (
+            "⚠️ Lỗi xác thực Gemini CLI.\n"
+            "💡 Gợi ý: SSH vào server và chạy `gemini` để đăng nhập lại."
+        )
+    if any(k in r for k in ("403", "permission_denied", "forbidden")):
+        return (
+            "⚠️ Không có quyền truy cập.\n"
+            "💡 Gợi ý: Kiểm tra API key hoặc OAuth token trong `~/.tg-gemini/config.toml`."
+        )
+    if any(k in r for k in ("model not found", "unknown model")) or (
+        "404" in r and "model" in r
+    ):
+        return (
+            "⚠️ Model không tồn tại.\n"
+            "💡 Gợi ý: Dùng `/model` để xem và chọn model hợp lệ."
+        )
+    if "timeout" in r:
+        return (
+            "⚠️ Gemini CLI timeout.\n"
+            "💡 Gợi ý: Thử lại với prompt ngắn hơn, hoặc dùng `/model gemini-2.5-flash`."
+        )
+    # Fallback: trim and show first 300 chars
+    trimmed = raw.strip()[:300]
+    if len(raw.strip()) > 300:
+        trimmed += "…"
+    return f"❌ Lỗi Gemini CLI:\n```\n{trimmed}\n```"
+
+
 def _format_tool_params(tool_name: str, params: dict[str, Any]) -> str:
     """Extract human-readable summary from tool parameters."""
     if not params:
@@ -358,9 +405,18 @@ class GeminiSession:
                 stderr_msg = "".join(stderr_chunks).strip()
                 if stderr_msg:
                     logger.error("GeminiSession: process failed", stderr=stderr_msg)
+                    friendly = _classify_error(stderr_msg)
                     await self._events.put(
-                        Event(type=EventType.ERROR, error=RuntimeError(stderr_msg))
+                        Event(type=EventType.ERROR, error=RuntimeError(friendly))
                     )
+                else:
+                    logger.error("GeminiSession: process exited with non-zero code",
+                                 returncode=proc.returncode)
+                    await self._events.put(
+                        Event(type=EventType.ERROR,
+                              error=RuntimeError("❌ Gemini CLI thoát với lỗi không xác định."))
+                    )
+
 
     async def _stream_stdout(self, stdout: asyncio.StreamReader) -> None:
         """Read and parse JSONL lines from stdout."""

@@ -48,7 +48,7 @@ class TelegramConfig(_StrictModel):
 class GeminiConfig(_StrictModel):
     work_dir: str = "."
     model: str = ""
-    mode: GeminiMode = "default"
+    mode: GeminiMode = "default"  # yolo required for shell execution in subprocess context
     api_key: str = ""
     cmd: str = "gemini"
     timeout_mins: _NonNegInt = 0
